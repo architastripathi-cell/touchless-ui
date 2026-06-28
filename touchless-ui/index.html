@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proximity Spatial Energy Web AR</title>
+    
+    <script src="https://cdnajsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #050811;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; overflow: hidden;
+        }
+        .app-container {
+            position: relative;
+            width: 800px; height: 600px;
+            border-radius: 20px;
+            box-shadow: 0 0 40px rgba(0, 255, 200, 0.25);
+            border: 1px solid rgba(0, 255, 200, 0.2);
+            background: #090d16;
+        }
+        #webcam, #uiCanvas {
+            position: absolute; top: 0; left: 0;
+            width: 800px; height: 600px;
+            border-radius: 20px;
+        }
+        #webcam {
+            transform: scaleX(-1);
+            object-fit: cover;
+            opacity: 0.5; 
+        }
+        #uiCanvas {
+            transform: scaleX(-1);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="uiCanvas"></canvas>
+    </div>
+
+    <script>
+        const video = document.getElementById("webcam");
+        const canvas = document.getElementById("uiCanvas");
+        const ctx = canvas.getContext("2d");
+
+        canvas.width = 800;
+        canvas.height = 600;
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 2, 
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        const HAND_CONNECTIONS = [
+            [0,1],[1,2],[2,3],[3,4],
+            [0,5],[5,6],[6,7],[7,8],
+            [5,9],[9,10],[10,11],[11,12],
+            [9,13],[13,14],[14,15],[15,16],
+            [13,17],[0,17],[17,18],[18,19],[19,20]
+        ];
+
+        hands.onResults((results) => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const tips = [4, 8, 12, 16, 20]; // Paanchon unglion ke tips
+
+                // 1. HAR EK HAATH KE ANDAR LASER WEB BANANA (Single Hand Support)
+                results.multiHandLandmarks.forEach((hand) => {
+                    // Bone skeleton lines
+                    HAND_CONNECTIONS.forEach(([start, end]) => {
+                        const pt1 = hand[start];
+                        const pt2 = hand[end];
+                        ctx.beginPath();
+                        ctx.moveTo(pt1.x * canvas.width, pt1.y * canvas.height);
+                        ctx.lineTo(pt2.x * canvas.width, pt2.y * canvas.height);
+                        ctx.strokeStyle = "rgba(0, 255, 200, 0.4)";
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    });
+
+                    // SINGLE HAND FINGERTIPS INTER-CONNECTION: Paanchon unglion ko aapas me laser se jodein!
+                    tips.forEach((idA) => {
+                        tips.forEach((idB) => {
+                            if (idA !== idB) {
+                                const ptA = hand[idA];
+                                const ptB = hand[idB];
+                                ctx.beginPath();
+                                ctx.moveTo(ptA.x * canvas.width, ptA.y * canvas.height);
+                                ctx.lineTo(ptB.x * canvas.width, ptB.y * canvas.height);
+                                ctx.strokeStyle = "rgba(255, 0, 150, 0.25)"; // Pink laser network mesh
+                                ctx.lineWidth = 1;
+                                ctx.stroke();
+                            }
+                        });
+                    });
+
+                    // Joints par glow circles
+                    hand.forEach((lm) => {
+                        ctx.beginPath();
+                        ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 4, 0, 2 * Math.PI);
+                        ctx.fillStyle = "#ffffff";
+                        ctx.shadowBlur = 10;
+                        ctx.shadowColor = "#00ffcc";
+                        ctx.fill();
+                        ctx.closePath();
+                    });
+                });
+
+                // 2. DOUBLE HAND CROSS-LASER NETWORK (Jab dono haath paas aayenge)
+                if (results.multiHandLandmarks.length === 2) {
+                    const handA = results.multiHandLandmarks[0];
+                    const handB = results.multiHandLandmarks[1];
+
+                    const dist = Math.hypot(handA[8].x - handB[8].x, handA[8].y - handB[8].y);
+
+                    // Agar dono haath close hain, toh aapas me super intense laser beams connect karein
+                    if (dist < 0.5) {
+                        tips.forEach((idA) => {
+                            tips.forEach((idB) => {
+                                const ptA = handA[idA];
+                                const ptB = handB[idB];
+
+                                ctx.beginPath();
+                                ctx.moveTo(ptA.x * canvas.width, ptA.y * canvas.height);
+                                ctx.lineTo(ptB.x * canvas.width, ptB.y * canvas.height);
+                                ctx.strokeStyle = `rgba(255, 0, 150, ${0.5 - dist})`; 
+                                ctx.lineWidth = 2;
+                                ctx.shadowBlur = 12;
+                                ctx.shadowColor = "#ff0099";
+                                ctx.stroke();
+                                ctx.closePath();
+                            });
+                        });
+                    }
+                }
+            }
+            ctx.shadowBlur = 0;
+        });
+
+        navigator.mediaDevices.getUserMedia({ video: { width: 800, height: 600 } })
+            .then((stream) => {
+                video.srcObject = stream;
+                function processFrame() {
+                    if (!video.paused && !video.ended) {
+                        hands.send({ image: video }).then(() => {
+                            requestAnimationFrame(processFrame);
+                        });
+                    } else {
+                        requestAnimationFrame(processFrame);
+                    }
+                }
+                video.addEventListener("loadeddata", () => {
+                    processFrame();
+                });
+            })
+            .catch((err) => console.error(err));
+    </script>
+</body>
+</html>
